@@ -1,0 +1,18 @@
+import os
+import torch
+from torchvision import datasets, transforms
+
+def get_pokemon_dataloader(data_root="data/pokemon", image_size=64,
+                           batch_size=64, num_workers=4):
+    transform = transforms.Compose([
+        transforms.Resize((image_size, image_size)),
+        transforms.ToTensor(),
+        transforms.Normalize([0.5, 0.5, 0.5], [0.5, 0.5, 0.5])  # [-1, 1]
+    ])
+
+    ds = datasets.ImageFolder(root=data_root, transform=transform)
+    dl = torch.utils.data.DataLoader(
+        ds, batch_size=batch_size, shuffle=True,
+        num_workers=num_workers, pin_memory=True
+    )
+    return dl, len(ds.classes)

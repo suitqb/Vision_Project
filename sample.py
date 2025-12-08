@@ -17,4 +17,4 @@ def generate(checkpoint_path, num_samples=64, image_size=64, timesteps=1000):
         save_image(x, "pokemon_generated.png", nrow=8)
 
 if __name__ == "__main__":
-    generate("checkpoints/ddpm_epochX_stepY.pt")
+    generate("checkpoints/ddpm_epoch50_step2000.pt")

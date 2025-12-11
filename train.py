@@ -159,4 +159,4 @@ def train(num_epochs=300,
 
 if __name__ == "__main__":
     # exemple : 100 000 updates max
-    train(max_steps=100000, resume=False)
+    train(max_steps=100000)

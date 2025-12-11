@@ -6,16 +6,16 @@ from torchvision.utils import save_image
 from dataset import get_anime_dataloader
 from model_unet import UNet
 from diffusion import DDPM
-from ema import EMA
 
-def train(num_epochs=300,
+
+def train(num_epochs=200,
           batch_size=32,
-          lr=1e-4,              # LR un peu plus faible
-          timesteps=400,
+          lr=2e-4,
+          timesteps=400,          # <--- moins que 1000, plus stable/rapide
           image_size=64,
           device=None,
           resume=True,
-          max_steps=None):
+          max_steps=None):        # ex: max_steps=50000 pour stopper proprement
 
     device = device or ("cuda" if torch.cuda.is_available() else "cpu")
     print(f"Device : {device}")
@@ -26,7 +26,7 @@ def train(num_epochs=300,
     dl, _ = get_anime_dataloader(
         image_size=image_size,
         batch_size=batch_size,
-        # vérifier que les images sont bien normalisées en [-1, 1]
+        # si tu as un SSD tu peux monter num_workers dans dataset.py
     )
 
     # ---------------------------
@@ -36,13 +36,9 @@ def train(num_epochs=300,
     ddpm = DDPM(model, image_size=image_size, channels=3,
                 timesteps=timesteps, device=device).to(device)
 
-    ema = EMA(ddpm, beta=0.9999)
-
-    ddpm.train()  # s'assurer qu'on est bien en mode train
-
     optim_ = optim.Adam(ddpm.parameters(), lr=lr)
 
-    # AMP (mixed precision)
+    # AMP (mixed precision) – utile avec 16 Go
     use_amp = device.startswith("cuda")
     scaler = torch.cuda.amp.GradScaler(enabled=use_amp)
 
@@ -62,7 +58,7 @@ def train(num_epochs=300,
         optim_.load_state_dict(ckpt["optimizer"])
         start_epoch = ckpt.get("epoch", 0)
         step = ckpt.get("step", 0)
-        if "scaler" in ckpt and use_amp and ckpt["scaler"] is not None:
+        if "scaler" in ckpt and use_amp:
             scaler.load_state_dict(ckpt["scaler"])
         print(f"[*] Reprise à epoch {start_epoch}, step {step}")
 
@@ -90,26 +86,16 @@ def train(num_epochs=300,
 
             scaler.step(optim_)
             scaler.update()
-            ema.update(ddpm)
 
             if step % 100 == 0:
                 print(f"Epoch {epoch} Step {step} Loss {loss.item():.4f}")
 
             if step % save_interval == 0:
-                # ----- SAMPLE EN MODE EVAL -----
-                ddpm.eval()
                 with torch.no_grad():
-                    ema.copy_to(ddpm)
-                    samples = ddpm.ddim_sample(batch_size=16, ddim_steps=50)
-                    # suppose que le modèle travaille en [-1, 1]
+                    samples = ddpm.sample(batch_size=16)
                     samples = (samples.clamp(-1, 1) + 1) / 2
-                    save_image(
-                        samples,
-                        f"samples/epoch{epoch}_step{step}.png",
-                        nrow=4
-                    )
-                ddpm.train()
-                # -------------------------------
+                    save_image(samples, f"samples/epoch{epoch}_step{step}.png",
+                               nrow=4)
 
                 state = {
                     "model": ddpm.state_dict(),
@@ -124,15 +110,13 @@ def train(num_epochs=300,
                         "image_size": image_size,
                     },
                 }
-                torch.save(
-                    state,
-                    f"checkpoints/ddpm_epoch{epoch}_step{step}.pt"
-                )
+                torch.save(state,
+                           f"checkpoints/ddpm_epoch{epoch}_step{step}.pt")
                 torch.save(state, last_ckpt)  # checkpoint de reprise
 
             step += 1
 
 
 if __name__ == "__main__":
-    # exemple : 100 000 updates max
-    train(max_steps=1000000)
+    # exemple : 60 000 updates max
+    train(max_steps=60000)

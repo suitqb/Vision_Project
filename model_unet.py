@@ -84,7 +84,7 @@ class UNet(nn.Module):
         """
         super().__init__()
 
-        base_ch = 32
+        base_ch = 64
 
         # time embedding
         self.time_mlp = nn.Sequential(

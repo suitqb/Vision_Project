@@ -1,6 +1,13 @@
 import torch
 import torch.nn as nn
 
+def cosine_beta_schedule(timesteps, s=0.008):
+    steps = torch.arange(timesteps + 1, dtype=torch.float32)
+    alphas_cumprod = torch.cos(((steps / timesteps) + s) / (1 + s) * torch.pi / 2) ** 2
+    alphas_cumprod = alphas_cumprod / alphas_cumprod[0]
+    betas = 1 - (alphas_cumprod[1:] / alphas_cumprod[:-1])
+    return torch.clip(betas, 0.0001, 0.9999)
+
 class DDPM(nn.Module):
     def __init__(self, model, image_size=64, channels=3,
                  timesteps=1000, beta_start=1e-4, beta_end=0.02, device="cuda"):
@@ -11,7 +18,7 @@ class DDPM(nn.Module):
         self.channels = channels
         self.timesteps = timesteps
 
-        betas = torch.linspace(beta_start, beta_end, timesteps)
+        betas = cosine_beta_schedule(timesteps)
         alphas = 1.0 - betas
         alphas_cumprod = torch.cumprod(alphas, dim=0)
 
@@ -64,4 +71,31 @@ class DDPM(nn.Module):
         for t in reversed(range(self.timesteps)):
             t_batch = torch.tensor([t] * batch_size, device=self.device).long()
             x = self.p_sample(x, t_batch)
+        return x
+
+    @torch.no_grad()
+    def ddim_sample(self, batch_size, ddim_steps=50):
+        device = self.device
+        step_ratio = self.timesteps // ddim_steps
+
+        x = torch.randn(batch_size, self.channels, self.image_size, self.image_size, device=device)
+
+        for i in reversed(range(0, ddim_steps)):
+            t = torch.full((batch_size,), i * step_ratio, device=device, dtype=torch.long)
+
+            eps = self.model(x, t)
+
+            alpha_t = self.alphas_cumprod[t]
+            alpha_prev = self.alphas_cumprod[
+                torch.clamp(t - step_ratio, min=0)
+            ]
+
+            sigma = 0  # DDIM = deterministe (le plus net)
+            x0_pred = (x - torch.sqrt(1 - alpha_t)[:,None,None,None] * eps) / torch.sqrt(alpha_t)[:,None,None,None]
+
+            x = (
+                torch.sqrt(alpha_prev)[:,None,None,None] * x0_pred +
+                torch.sqrt(1 - alpha_prev)[:,None,None,None] * eps * sigma
+            )
+
         return x

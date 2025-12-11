@@ -4,7 +4,7 @@ from torchvision import datasets, transforms
 import torch
 
 def get_anime_dataloader(data_root="data/anime_faces", image_size=64,
-                           batch_size=64, num_workers=4):
+                           batch_size=32, num_workers=4):
 
     transform = transforms.Compose([
         transforms.Resize((image_size, image_size)),

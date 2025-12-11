@@ -74,7 +74,7 @@ class DDPM(nn.Module):
         return x
 
     @torch.no_grad()
-    def ddim_sample(self, batch_size, ddim_steps=50):
+    def ddim_sample(self, batch_size, ddim_steps=50, eta: float = 0.0):
         device = self.device
         step_ratio = self.timesteps // ddim_steps
 
@@ -86,16 +86,30 @@ class DDPM(nn.Module):
             eps = self.model(x, t)
 
             alpha_t = self.alphas_cumprod[t]
-            alpha_prev = self.alphas_cumprod[
-                torch.clamp(t - step_ratio, min=0)
-            ]
 
-            sigma = 0  # DDIM = deterministe (le plus net)
-            x0_pred = (x - torch.sqrt(1 - alpha_t)[:,None,None,None] * eps) / torch.sqrt(alpha_t)[:,None,None,None]
+            prev_t = t - step_ratio
+            prev_t_clamped = torch.clamp(prev_t, min=0)
+            alpha_prev = self.alphas_cumprod[prev_t_clamped]
+            alpha_prev = torch.where(prev_t < 0, torch.ones_like(alpha_prev), alpha_prev)
+
+            sqrt_alpha_t = torch.sqrt(alpha_t)[:, None, None, None]
+            sqrt_one_minus_alpha_t = torch.sqrt(1 - alpha_t)[:, None, None, None]
+
+            x0_pred = (x - sqrt_one_minus_alpha_t * eps) / sqrt_alpha_t
+
+            sigma = eta * torch.sqrt(
+                torch.clamp(
+                    ((1 - alpha_prev) / (1 - alpha_t)) * (1 - alpha_t / alpha_prev),
+                    min=0.0,
+                )
+            )
+            dir_coef = torch.sqrt(torch.clamp(1 - alpha_prev - sigma**2, min=0.0))
+            noise = torch.randn_like(x) if eta > 0 else 0.0
 
             x = (
-                torch.sqrt(alpha_prev)[:,None,None,None] * x0_pred +
-                torch.sqrt(1 - alpha_prev)[:,None,None,None] * eps * sigma
+                torch.sqrt(alpha_prev)[:, None, None, None] * x0_pred
+                + dir_coef[:, None, None, None] * eps
+                + sigma[:, None, None, None] * noise
             )
 
         return x

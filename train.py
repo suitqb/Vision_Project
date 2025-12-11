@@ -36,9 +36,6 @@ def train(num_epochs=300,
     model = UNet(img_channels=3).to(device)
     ddpm = DDPM(model, image_size=image_size, channels=3,
                 timesteps=timesteps, device=device).to(device)
-
-    ema = EMA(ddpm, beta=0.9999)
-
     ddpm.train()  # s'assurer qu'on est bien en mode train
 
     optim_ = optim.Adam(ddpm.parameters(), lr=lr)
@@ -78,6 +75,7 @@ def train(num_epochs=300,
             scaler.load_state_dict(ckpt["scaler"])
         print(f"[*] Reprise à epoch {start_epoch}, step {step}")
 
+    ema = EMA(ddpm, beta=0.9999)
     # ---------------------------
     # Boucle d'entraînement
     # ---------------------------
@@ -103,7 +101,7 @@ def train(num_epochs=300,
 
             scaler.step(optim_)
             scaler.update()
-            ema.update(ddpm)
+            # ema.update(ddpm)
 
             if step % 100 == 0:
                 print(f"Epoch {epoch} Step {step} Loss {loss.item():.4f}")
@@ -123,7 +121,7 @@ def train(num_epochs=300,
                 # ----- SAMPLE EN MODE EVAL -----
                 ddpm.eval()
                 with torch.no_grad():
-                    ema.copy_to(ddpm)
+                    # ema.copy_to(ddpm)
                     samples = ddpm.ddim_sample(batch_size=16, ddim_steps=50)
                     # suppose que le modèle travaille en [-1, 1]
                     samples = (samples.clamp(-1, 1) + 1) / 2
@@ -161,4 +159,4 @@ def train(num_epochs=300,
 
 if __name__ == "__main__":
     # exemple : 100 000 updates max
-    train(max_steps=1000000)
+    train(max_steps=100000, resume=False)

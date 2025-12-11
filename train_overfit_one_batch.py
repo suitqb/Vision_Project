@@ -6,6 +6,7 @@ from torchvision.utils import save_image
 from dataset import get_anime_dataloader
 from model_unet import UNet
 from diffusion import DDPM
+from metrics import MetricsTracker
 
 
 def train(num_epochs=200,
@@ -45,6 +46,17 @@ def train(num_epochs=200,
     os.makedirs("checkpoints", exist_ok=True)
     os.makedirs("samples", exist_ok=True)
 
+    metrics_tracker = MetricsTracker(
+        log_dir="metrics",
+        csv_filename="overfit_metrics.csv",
+        resume=resume,
+    )
+    log_interval = 50
+    plot_interval = 500
+
+    def finalize_metrics():
+        metrics_tracker.generate_plots(metrics=("loss",), smoothing=20)
+
     # ---------------------------
     # Reprise éventuelle
     # ---------------------------
@@ -71,6 +83,7 @@ def train(num_epochs=200,
         for x, _ in dl:
             if max_steps is not None and step >= max_steps:
                 print(f"Max steps {max_steps} atteint, arrêt.")
+                finalize_metrics()
                 return
 
             x = x.to(device)
@@ -89,6 +102,17 @@ def train(num_epochs=200,
 
             if step % 100 == 0:
                 print(f"Epoch {epoch} Step {step} Loss {loss.item():.4f}")
+
+            if step % log_interval == 0:
+                metrics_tracker.log(
+                    epoch=epoch,
+                    step=step,
+                    loss=float(loss.item()),
+                    lr=optim_.param_groups[0]["lr"],
+                )
+
+            if step % plot_interval == 0:
+                metrics_tracker.generate_plots(metrics=("loss",), smoothing=20)
 
             if step % save_interval == 0:
                 with torch.no_grad():
@@ -115,6 +139,8 @@ def train(num_epochs=200,
                 torch.save(state, last_ckpt)  # checkpoint de reprise
 
             step += 1
+
+    finalize_metrics()
 
 
 if __name__ == "__main__":
